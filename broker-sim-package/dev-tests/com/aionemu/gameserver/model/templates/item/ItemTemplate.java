@@ -1,0 +1,6 @@
+package com.aionemu.gameserver.model.templates.item;
+import com.aionemu.gameserver.model.Race; import com.aionemu.gameserver.model.templates.item.enums.ItemGroup;
+public class ItemTemplate { public int id; public String name; public long price; public int level; public boolean weapon, armor, stack; public Race race=Race.PC_ALL; public ItemGroup group; public boolean tune; public int catId, extraId, recipeSkill; public com.aionemu.gameserver.model.PlayerClass playerClass; public String expTop, expLeaf;
+ public ItemType getItemType(){return ItemType.NORMAL;} public boolean isTradeable(){return true;} public boolean isSoulBound(){return false;} public boolean isKinah(){return false;} public boolean isStigma(){return false;}
+ public int getExpireTime(){return 0;} public int getTempExchangeTime(){return 0;} public int getExtraInventoryId(){return -1;} public String getName(){return name;} public long getPrice(){return price;} public int getLevel(){return level;}
+ public boolean isWeapon(){return weapon;} public boolean isArmor(){return armor;} public boolean isStackable(){return stack;} public long getMaxStackCount(){return stack?1000:1;} public int getTemplateId(){return id;} public Race getRace(){return race;} public ItemGroup getItemGroup(){return group;} public boolean canTune(){return tune;} }

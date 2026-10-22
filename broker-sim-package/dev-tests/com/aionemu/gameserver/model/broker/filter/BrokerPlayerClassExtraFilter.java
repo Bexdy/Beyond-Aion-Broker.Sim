@@ -1,0 +1,2 @@
+package com.aionemu.gameserver.model.broker.filter; import com.aionemu.gameserver.model.templates.item.ItemTemplate; import com.aionemu.gameserver.model.PlayerClass;
+public class BrokerPlayerClassExtraFilter implements BrokerFilter { int id; PlayerClass pc; public BrokerPlayerClassExtraFilter(int id,PlayerClass pc){this.id=id;this.pc=pc;} public boolean accept(ItemTemplate t){ return t.catId==id && t.playerClass==pc; } }

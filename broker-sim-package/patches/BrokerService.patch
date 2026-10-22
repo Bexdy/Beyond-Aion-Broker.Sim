@@ -1,0 +1,246 @@
+--- a/game-server/src/com/aionemu/gameserver/services/BrokerService.java
++++ b/game-server/src/com/aionemu/gameserver/services/BrokerService.java
+@@ -1,3 +1,4 @@
++// NOTICE (Beyond-Aion-Broker.Sim, 2026-10-20): modified copy of a file from beyond-aion/aion-server (GPL-3.0). See NOTICE.md for the changes.
+ package com.aionemu.gameserver.services;
+ 
+ import java.util.*;
+@@ -51,6 +52,8 @@
+ 	private static final int DELAY_BROKER_SAVE = 6000;
+ 	private static final int DELAY_BROKER_CHECK = 60000;
+ 	private BrokerPeriodicTaskManager saveManager;
++	/** item ids of sold lots whose goods still sit in the broker location (virtual buyer sales, plus sold rows found at startup) */
++	private final Set<Integer> leftoverItemRows = ConcurrentHashMap.newKeySet();
+ 	private Map<Integer, BrokerPlayerCache> playerBrokerCache = new ConcurrentHashMap<>();
+ 
+ 	public static BrokerService getInstance() {
+@@ -62,6 +65,7 @@
+ 
+ 		saveManager = new BrokerPeriodicTaskManager(DELAY_BROKER_SAVE);
+ 		ThreadPoolManager.getInstance().scheduleAtFixedRate(this::checkExpiredItems, DELAY_BROKER_CHECK, DELAY_BROKER_CHECK);
++		BrokerSimulationService.scheduleStart();
+ 	}
+ 
+ 	private void initBrokerService() {
+@@ -72,6 +76,8 @@
+ 		List<BrokerItem> brokerItems = BrokerDAO.loadBroker();
+ 
+ 		for (BrokerItem item : brokerItems) {
++			if (item.isSold())
++				leftoverItemRows.add(item.getItemUniqueId()); // deleted (only if still in the broker location) when the seller collects
+ 			if (item.getItemBrokerRace() == BrokerRace.ASMODIAN) {
+ 				if (item.isSettled()) {
+ 					asmodianSettledItems.put(item.getItemUniqueId(), item);
+@@ -246,7 +252,13 @@
+ 				return;
+ 			}
+ 
++			final boolean simulated = BrokerSimulationService.isSimulatedSeller(buyingItem.getSellerId());
+ 			Item item = buyingItem.getItem();
++			Race itemRace = item.getItemTemplate().getRace();
++			if (itemRace != Race.PC_ALL && itemRace != playerRace) { // an Elyos can never buy an Asmodian item and vice versa
++				PacketSendUtility.sendMessage(player, "This item belongs to the other faction and cannot be bought.");
++				return;
++			}
+ 			long price = buyingItem.getPrice() * itemCount;
+ 			if (player.getInventory().isFull(item.getItemTemplate().getExtraInventoryId())) {
+ 				PacketSendUtility.sendPacket(player, SM_SYSTEM_MESSAGE.STR_MSG_FULL_INVENTORY());
+@@ -260,15 +272,19 @@
+ 				buyingItem.decreaseItemCount(itemCount);
+ 				buyingItem.setPersistentState(PersistentState.UPDATE_REQUIRED);
+ 				// storing old broker item with rest items to sell
+-				BrokerOpSaveTask bost = new BrokerOpSaveTask(buyingItem, buyingItem.getItem(), player.getInventory().getKinahItem(), player.getObjectId());
+-				saveManager.add(bost);
++				if (!simulated) {
++					BrokerOpSaveTask bost = new BrokerOpSaveTask(buyingItem, buyingItem.getItem(), player.getInventory().getKinahItem(), player.getObjectId());
++					saveManager.add(bost);
++				}
+ 				// creating new broker item which will be settled
+ 				BrokerItem soldItem = new BrokerItem(ItemFactory.newItem(buyingItem.getItemId(), itemCount), buyingItem.getPrice(), buyingItem.getSellerId(),
+ 					buyingItem.isSplittingAvailable(), buyingItem.getItemBrokerRace());
+ 				buyingItem = soldItem;
+ 				item = buyingItem.getItem();
+-				BrokerOpSaveTask bost2 = new BrokerOpSaveTask(buyingItem, buyingItem.getItem(), player.getInventory().getKinahItem(), player.getObjectId());
+-				saveManager.add(bost2);
++				if (!simulated) {
++					BrokerOpSaveTask bost2 = new BrokerOpSaveTask(buyingItem, buyingItem.getItem(), player.getInventory().getKinahItem(), player.getObjectId());
++					saveManager.add(bost2);
++				}
+ 			} else {
+ 				getRaceBrokerItems(playerRace).remove(itemUniqueId);
+ 			}
+@@ -286,10 +302,10 @@
+ 
+ 			if (LoggingConfig.LOG_BROKER_EXCHANGE)
+ 				log.info("Player: " + player.getName() + " bought item " + boughtItem.getItemId() + " [" + boughtItem.getItemName() + "] (count: " + itemCount
+-					+ ") from player: " + PlayerService.getPlayerName(buyingItem.getSellerId()) + " (total price: " + price + ")");
++					+ ") from player: " + getSellerName(buyingItem.getSellerId()) + " (total price: " + price + ")");
+ 
+ 			// create save task
+-			BrokerOpSaveTask bost = new BrokerOpSaveTask(buyingItem, boughtItem, player.getInventory().getKinahItem(), player.getObjectId());
++			BrokerOpSaveTask bost = new BrokerOpSaveTask(simulated ? null : buyingItem, boughtItem, player.getInventory().getKinahItem(), player.getObjectId());
+ 			saveManager.add(bost);
+ 		}
+ 		showRequestedItems(player, getPlayerCache(player).getBrokerMaskCache(), getPlayerCache(player).getBrokerSortTypeCache(),
+@@ -298,6 +314,9 @@
+ 	}
+ 
+ 	private void putToSettled(Race race, BrokerItem brokerItem, boolean isSold) {
++		if (BrokerSimulationService.isSimulatedSeller(brokerItem.getSellerId()))
++			return; // virtual sellers have no settlement and no DB row
++
+ 		if (isSold)
+ 			brokerItem.removeItem();
+ 		else
+@@ -417,6 +436,7 @@
+ 		saveManager.add(bost);
+ 
+ 		PacketSendUtility.sendPacket(player, new SM_BROKER_SERVICE(newBrokerItem, 0, registeredItemsCount));
++		BrokerSimulationService.onPlayerListing(); // virtual buyers with a matching buy order react within seconds
+ 	}
+ 
+ 	public void showSellWindow(Player player, int itemUniqueId) {
+@@ -429,6 +449,9 @@
+ 			.summaryStatistics();
+ 		long lowestPrice = priceStats.getMin() == Long.MAX_VALUE ? 0 : priceStats.getMin();
+ 		long highestPrice = priceStats.getMax() == Long.MIN_VALUE ? 0 : priceStats.getMax();
++		long[] range = BrokerSimulationService.getSellWindowRange(player.getRace(), itemToRegister.getItemId(), lowestPrice, highestPrice);
++		lowestPrice = range[0]; // market estimate when nobody lists the item; the best open buy order raises the high end
++		highestPrice = range[1];
+ 		PacketSendUtility.sendPacket(player, new SM_BROKER_SERVICE((byte) 0, itemUniqueId, lowestPrice, highestPrice));
+ 	}
+ 
+@@ -524,6 +547,7 @@
+ 		int playerId = player.getObjectId();
+ 		long kinahCollect = 0;
+ 		boolean itemsLeft = false;
++		List<Integer> leftoverToDelete = new ArrayList<>();
+ 
+ 		for (BrokerItem item : brokerSettledItems.values()) {
+ 			if (item.getSellerId() == playerId)
+@@ -546,6 +570,8 @@
+ 					item.setPersistentState(PersistentState.DELETED);
+ 					saveManager.add(new BrokerOpSaveTask(item));
+ 					kinahCollect += item.getPrice() * item.getItemCount();
++					if (leftoverItemRows.remove(item.getItemUniqueId()))
++						leftoverToDelete.add(item.getItemUniqueId());
+ 				}
+ 			} else {
+ 				if (item.getItem() != null) {
+@@ -572,6 +598,7 @@
+ 			}
+ 		}
+ 
++		InventoryDAO.deleteBrokerLocationItems(leftoverToDelete);
+ 		player.getInventory().increaseKinah(kinahCollect);
+ 
+ 		showSettledItems(player, 0);
+@@ -586,7 +613,7 @@
+ 		for (Race race : Arrays.asList(Race.ASMODIANS, Race.ELYOS)) {
+ 			Map<Integer, BrokerItem> brokerItems = getRaceBrokerItems(race);
+ 			for (BrokerItem item : brokerItems.values()) {
+-				if (item != null && item.getExpireTime().getTime() <= now) {
++				if (item != null && !BrokerSimulationService.isSimulatedSeller(item.getSellerId()) && item.getExpireTime().getTime() <= now) {
+ 					synchronized (this) {
+ 						putToSettled(race, item, false);
+ 						brokerItems.remove(item.getItemUniqueId());
+@@ -596,6 +623,99 @@
+ 		}
+ 	}
+ 
++	// ---- broker simulation hooks ----
++
++	public void addSimulatedListing(BrokerItem brokerItem) {
++		synchronized (this) {
++			Map<Integer, BrokerItem> map = brokerItem.getItemBrokerRace() == BrokerRace.ELYOS ? elyosBrokerItems : asmodianBrokerItems;
++			map.put(brokerItem.getItemUniqueId(), brokerItem);
++		}
++	}
++
++	public boolean removeSimulatedListing(Race race, int itemUniqueId) {
++		synchronized (this) {
++			Map<Integer, BrokerItem> map = getRaceBrokerItems(race);
++			BrokerItem brokerItem = map == null ? null : map.get(itemUniqueId);
++			if (brokerItem == null || !BrokerSimulationService.isSimulatedSeller(brokerItem.getSellerId()))
++				return false; // never touch a real player's listing
++			map.remove(itemUniqueId);
++			return true;
++		}
++	}
++
++	/** Snapshot of the REAL players' listings of one faction (virtual traders excluded). */
++	public List<BrokerItem> getPlayerListings(Race race) {
++		Map<Integer, BrokerItem> map = getRaceBrokerItems(race);
++		if (map == null)
++			return List.of();
++		return map.values().stream()
++			.filter(b -> b != null && b.getItem() != null && !b.isSold() && !b.isCanceled() && !BrokerSimulationService.isSimulatedSeller(b.getSellerId()))
++			.collect(Collectors.toList());
++	}
++
++	/**
++	 * A virtual buyer buys {@code count} pieces of a real player's listing. The seller is settled exactly like after a normal sale (sold entry,
++	 * settled-icon, Kinah collectable at the broker NPC). The goods simply disappear; they never enter anybody's inventory.
++	 *
++	 * @return true if the sale happened
++	 */
++	public boolean sellToSimulatedBuyer(Race race, int itemUniqueId, long count) {
++		synchronized (this) {
++			Map<Integer, BrokerItem> map = getRaceBrokerItems(race);
++			BrokerItem listing = map == null ? null : map.get(itemUniqueId);
++			if (listing == null || listing.getItem() == null || listing.isSold() || listing.isCanceled()
++				|| BrokerSimulationService.isSimulatedSeller(listing.getSellerId()))
++				return false;
++			if (count <= 0 || count > listing.getItemCount())
++				return false;
++
++			BrokerItem soldLot;
++			if (count < listing.getItemCount()) {
++				if (!listing.isSplittingAvailable())
++					return false;
++				Item soldItem = ItemFactory.newItem(listing.getItemId(), count);
++				if (soldItem == null)
++					return false;
++				soldItem.setItemLocation(StorageType.BROKER.getId()); // never an inventory location, so it can't show up in anyone's bag
++				// remaining part stays listed
++				listing.decreaseItemCount(count);
++				listing.setPersistentState(PersistentState.UPDATE_REQUIRED);
++				saveManager.add(new BrokerOpSaveTask(listing, listing.getItem(), null, listing.getSellerId()));
++				soldLot = new BrokerItem(soldItem, listing.getPrice(), listing.getSellerId(), listing.isSplittingAvailable(), listing.getItemBrokerRace());
++			} else {
++				map.remove(itemUniqueId);
++				soldLot = listing;
++			}
++			putToSettled(race, soldLot, true);
++			leftoverItemRows.add(soldLot.getItemUniqueId());
++
++			if (LoggingConfig.LOG_BROKER_EXCHANGE)
++				log.info("[sim buyer] bought item " + soldLot.getItemId() + " (count: " + count + ") from player: "
++					+ PlayerService.getPlayerName(soldLot.getSellerId()) + " (total price: " + soldLot.getPrice() * count + ")");
++			return true;
++		}
++	}
++
++	/** Lowest price per piece of every item currently listed in a faction's broker (virtual traders included). */
++	public Map<Integer, Long> getLowestPrices(Race race) {
++		Map<Integer, Long> lowest = new HashMap<>();
++		Map<Integer, BrokerItem> map = getRaceBrokerItems(race);
++		if (map != null)
++			for (BrokerItem b : map.values())
++				if (b != null && b.getItem() != null && !b.isSold() && !b.isCanceled())
++					lowest.merge(b.getItemId(), b.getPrice(), Math::min);
++		return lowest;
++	}
++
++	public boolean isListed(Race race, int itemUniqueId) {
++		Map<Integer, BrokerItem> map = getRaceBrokerItems(race);
++		return map != null && map.containsKey(itemUniqueId);
++	}
++
++	private static String getSellerName(int sellerId) {
++		return PlayerService.getPlayerName(sellerId);
++	}
++
+ 	public void onPlayerLogin(Player player) {
+ 		List<BrokerItem> settledItemsForPlayer = getSettledItemsForPlayer(player.getRace(), player.getObjectId());
+ 		if (!settledItemsForPlayer.isEmpty())
