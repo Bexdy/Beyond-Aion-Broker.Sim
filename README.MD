@@ -231,12 +231,6 @@ After the first start, review these files in `config\broker-simulation\`:
 `gameserver.centralmarket.enable = false` in `config/mygs.properties`. Rebuilding with that project's `Install-Module.ps1` replaces the JAR, so run
 `Apply-BrokerSim.ps1` again afterwards.
 
-## Roadmap: mail and private store
-
-Ideas and a staged plan for using **Mail** (virtual traders you can write to and that write back, commissions paid with gatherable materials, price quotes,
-contracts) and for a **bot-free private store** (stall NPCs, offline stores) are in
-[docs/PLAN_MAIL_AND_PRIVATE_STORE.md](docs/PLAN_MAIL_AND_PRIVATE_STORE.md). Nothing in it is implemented yet.
-
 ## Development
 
 `dev-tests/` contains a small harness that runs the real `BrokerSimulationService` against fake item data and a fake broker (no server needed): it checks the
@@ -258,7 +252,3 @@ repeat cap, role purity, faction locks, the minimum prices and the staggering. S
 [GNU General Public License v3.0](LICENSE). The emulator this project extends is GPL-3.0 and this project contains modified copies of its files,
 so it must stay under the same license. Keep the license file and the notice comments in the modified files when you fork or redistribute.
 (This is a summary, not legal advice.)
-
-## Contributing
-
-Issues and pull requests are welcome at [github.com/Bexdy/Beyond-Aion-Broker.Sim](https://github.com/Bexdy/Beyond-Aion-Broker.Sim/issues), especially reports from real servers: your emulator version, the log lines, and what you saw in the broker.
