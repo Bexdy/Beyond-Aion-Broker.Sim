@@ -1,0 +1,15 @@
+# OPTIONAL. Only read when catalogSource = file or both in broker-simulation.properties.
+# With the default (catalogSource = auto) the catalog is built from the server's item templates and this file is not needed.
+# Copy to <GameServer>/config/broker-simulation/
+#
+# itemId   unitPriceKinah   minStack   maxStack
+#   - whitespace/tab separated, '#' starts a comment
+#   - minStack/maxStack are optional (default 1). Ignored for non-stackable items (always 1).
+#   - unitPrice is the price for ONE piece; traders vary it by roughly 0.8x - 1.4x
+#   - unknown item ids are logged and skipped at startup
+#
+# Fill this with ~100-300 items that are normally tradeable and that you want to appear
+# (consumables, crafting materials, manastones, plain gear...). Example format only:
+#
+# 123456789   1500    10   200
+# 123456790   25000   1    1

@@ -1,0 +1,2 @@
+package com.aionemu.gameserver.model.gameobjects; import com.aionemu.gameserver.dataholders.DataManager; import com.aionemu.gameserver.model.templates.item.ItemTemplate;
+public class Item { public int id; public long count; public Item(int id,long c){this.id=id;this.count=c;} public void setItemLocation(int i){} public ItemTemplate getItemTemplate(){return DataManager.ITEM_DATA.getItemTemplate(id);} }
