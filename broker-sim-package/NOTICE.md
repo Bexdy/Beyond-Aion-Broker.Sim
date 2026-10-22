@@ -1,6 +1,6 @@
 # Notice of modifications
 
-Aion Living Broker extends the [Beyond Aion server emulator](https://github.com/beyond-aion/aion-server) (GPL-3.0).
+Beyond Aion Broker Sim extends the [Beyond Aion server emulator](https://github.com/beyond-aion/aion-server) (GPL-3.0).
 As required by the GPL, this file lists which upstream files are modified copies and what was changed (2026-10-20).
 
 | File (under `game-server/src/com/aionemu/gameserver/`) | Status | Change |

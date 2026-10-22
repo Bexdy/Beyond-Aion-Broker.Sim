@@ -1,5 +1,5 @@
 <#
-Aion Living Broker - applies the broker simulation to an ALREADY BUILT, OFFLINE GameServer by recompiling the
+Beyond Aion Broker Sim - applies the broker simulation to an ALREADY BUILT, OFFLINE GameServer by recompiling the
 changed source files against the server's own jars and updating the jar that contains BrokerService.
 
   .\Apply-BrokerSim.ps1 -GameServerRoot 'C:\...\Aion\Server\game-server'
